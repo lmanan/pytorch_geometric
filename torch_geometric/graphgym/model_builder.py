@@ -33,7 +33,7 @@ class GraphGymModule(LightningModule):
         pred, true = self(batch)
         loss, pred_score = compute_loss(pred, true)
         step_end_time = time.time()
-        return dict(loss=loss, true=true, pred_score=pred_score,
+        return dict(loss=loss, true=true, pred_score=pred_score.detach(),
                     step_end_time=step_end_time)
 
     def training_step(self, batch, *args, **kwargs):
@@ -78,5 +78,5 @@ def create_model(to_device=True, dim_in=None, dim_out=None) -> GraphGymModule:
 
     model = GraphGymModule(dim_in, dim_out, cfg)
     if to_device:
-        model.to(torch.device(cfg.device))
+        model.to(torch.device(cfg.accelerator))
     return model

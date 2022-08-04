@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
 import torch
@@ -8,10 +7,20 @@ from torch_scatter import scatter, segment_csr
 from torch_geometric.utils import to_dense_batch
 
 
-class Aggregation(torch.nn.Module, ABC):
-    r"""An abstract base class for implementing custom aggregations."""
-    @abstractmethod
-    def forward(self, x: Tensor, index: Optional[Tensor] = None, *,
+class Aggregation(torch.nn.Module):
+    r"""An abstract base class for implementing custom aggregations.
+
+    Shapes:
+        - **input:**
+          node features :math:`(|\mathcal{V}|, F_{in})` or edge features
+          :math:`(|\mathcal{E}|, F_{in})`,
+          index vector :math:`(|\mathcal{V}|)` or :math:`(|\mathcal{E}|)`,
+        - **output:** graph features :math:`(|\mathcal{G}|, F_{out})` or node
+          features :math:`(|\mathcal{V}|, F_{out})`
+    """
+
+    # @abstractmethod
+    def forward(self, x: Tensor, index: Optional[Tensor] = None,
                 ptr: Optional[Tensor] = None, dim_size: Optional[int] = None,
                 dim: int = -2) -> Tensor:
         r"""
@@ -19,11 +28,11 @@ class Aggregation(torch.nn.Module, ABC):
             x (torch.Tensor): The source tensor.
             index (torch.LongTensor, optional): The indices of elements for
                 applying the aggregation.
-                One of :obj:`index` or `ptr` must be defined.
+                One of :obj:`index` or :obj:`ptr` must be defined.
                 (default: :obj:`None`)
             ptr (torch.LongTensor, optional): If given, computes the
                 aggregation based on sorted inputs in CSR representation.
-                One of :obj:`index` or `ptr` must be defined.
+                One of :obj:`index` or :obj:`ptr` must be defined.
                 (default: :obj:`None`)
             dim_size (int, optional): The size of the output tensor at
                 dimension :obj:`dim` after aggregation. (default: :obj:`None`)
@@ -35,9 +44,9 @@ class Aggregation(torch.nn.Module, ABC):
     def reset_parameters(self):
         pass
 
-    def __call__(self, x: Tensor, index: Optional[Tensor] = None, *,
+    def __call__(self, x: Tensor, index: Optional[Tensor] = None,
                  ptr: Optional[Tensor] = None, dim_size: Optional[int] = None,
-                 dim: int = -2) -> Tensor:
+                 dim: int = -2, **kwargs) -> Tensor:
 
         if dim >= x.dim() or dim < -x.dim():
             raise ValueError(f"Encountered invalid dimension '{dim}' of "
@@ -62,7 +71,7 @@ class Aggregation(torch.nn.Module, ABC):
                                  f"'{dim_size}' but expected "
                                  f">= '{int(index.max()) + 1}')")
 
-        return super().__call__(x, index, ptr=ptr, dim_size=dim_size, dim=dim)
+        return super().__call__(x, index, ptr, dim_size, dim, **kwargs)
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}()'
@@ -73,23 +82,22 @@ class Aggregation(torch.nn.Module, ABC):
         # TODO Currently, not all aggregators support `ptr`. This assert helps
         # to ensure that we require `index` to be passed to the computation:
         if index is None:
-            raise NotImplementedError(f"'{self.__class__.__name__}' requires "
-                                      f"'index' to be specified")
+            raise NotImplementedError(
+                "Aggregation requires 'index' to be specified")
 
     def assert_sorted_index(self, index: Optional[Tensor]):
         if index is not None and not torch.all(index[:-1] <= index[1:]):
-            raise ValueError(f"Can not perform aggregation inside "
-                             f"'{self.__class__.__name__}' since the "
-                             f"'index' tensor is not sorted")
+            raise ValueError("Can not perform aggregation since the 'index' "
+                             "tensor is not sorted")
 
     def assert_two_dimensional_input(self, x: Tensor, dim: int):
         if x.dim() != 2:
-            raise ValueError(f"'{self.__class__.__name__}' requires "
-                             f"two-dimensional inputs (got '{x.dim()}')")
+            raise ValueError(f"Aggregation requires two-dimensional inputs "
+                             f"(got '{x.dim()}')")
 
         if dim not in [-2, 0]:
-            raise ValueError(f"'{self.__class__.__name__}' needs to perform "
-                             f"aggregation in first dimension (got '{dim}')")
+            raise ValueError(f"Aggregation needs to perform aggregation in "
+                             f"first dimension (got '{dim}')")
 
     # Helper methods ##########################################################
 
@@ -106,15 +114,16 @@ class Aggregation(torch.nn.Module, ABC):
 
     def to_dense_batch(self, x: Tensor, index: Optional[Tensor] = None,
                        ptr: Optional[Tensor] = None,
-                       dim_size: Optional[int] = None,
-                       dim: int = -2) -> Tuple[Tensor, Tensor]:
+                       dim_size: Optional[int] = None, dim: int = -2,
+                       fill_value: float = 0.) -> Tuple[Tensor, Tensor]:
 
         # TODO Currently, `to_dense_batch` can only operate on `index`:
         self.assert_index_present(index)
         self.assert_sorted_index(index)
         self.assert_two_dimensional_input(x, dim)
 
-        return to_dense_batch(x, index, batch_size=dim_size)
+        return to_dense_batch(x, index, batch_size=dim_size,
+                              fill_value=fill_value)
 
 
 ###############################################################################
